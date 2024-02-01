@@ -1,10 +1,105 @@
-interface Position {
-    x: number,
-    y: number
+class Vector2D {
+    x: number;
+    y: number;
+
+    constructor(x: number, y: number) {
+        this.x = x;
+        this.y = y;
+    }
+
+    magnitude(): number {
+        return Math.sqrt(this.x * this.x + this.y * this.y)
+    }
+
+    normalize(): Vector2D {
+        const mag = this.magnitude();
+        if (mag === 0) {
+            return new Vector2D(0, 0); // Handle zero vector case
+        }
+        return new Vector2D(this.x / mag, this.y / mag);
+    }
+
+    dotProduct(other: Vector2D): number {
+        return this.x * other.x + this.y * other.y;
+    }
+
+    crossProduct(other: Vector2D): number {
+        return this.x * other.y - this.y * other.x;
+    }
+
+    distanceTo(other: Vector2D): number {
+        const dx = other.x - this.x;
+        const dy = other.y - this.y;
+        return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    angleTo(other: Vector2D): number {
+        const dot = this.dotProduct(other);
+        const magProduct = this.magnitude() * other.magnitude();
+        return Math.acos(dot / magProduct);
+    }
+
+    projectOnto(other: Vector2D): Vector2D {
+        const mag = other.magnitude();
+        const scalarProjection = this.dotProduct(other) / (mag * mag);
+        return other.normalize().scale(scalarProjection);
+    }
+
+    rotate(angle: number): Vector2D {
+        const cosAngle = Math.cos(angle);
+        const sinAngle = Math.sin(angle);
+        const newX = this.x * cosAngle - this.y * sinAngle;
+        const newY = this.x * sinAngle + this.y * cosAngle;
+        return new Vector2D(newX, newY);
+    }
+
+    perpendicularTo(clockwise: boolean = false): Vector2D {
+        const sign = clockwise ? 1 : -1;
+        return new Vector2D(-sign * this.y, sign * this.x);
+    }
+
+    equals(other: Vector2D): boolean {
+        return this.x === other.x && this.y === other.y;
+    }
+
+    add(other: Vector2D): Vector2D {
+        return new Vector2D(this.x + other.x, this.y + other.y);
+    }
+
+    subtract(other: Vector2D): Vector2D {
+        return new Vector2D(this.x - other.x, this.y - other.y);
+    }
+
+    multiply(scalar: number): Vector2D {
+        return new Vector2D(this.x * scalar, this.y * scalar);
+    }
+
+    divide(scalar: number): Vector2D {
+        if (scalar === 0) {
+            throw new Error("Division by zero");
+        }
+        return new Vector2D(this.x / scalar, this.y / scalar);
+    }
+
+    getAngle(): number {
+        return Math.atan2(this.y, this.x);
+    }
+
+    getDirection(): Vector2D {
+        return this.normalize();
+    }
+
+    toArray(): [number, number] {
+        return [this.x, this.y];
+    }
+
+    scale(scalar: number): Vector2D {
+        return new Vector2D(this.x * scalar, this.y * scalar);
+    }
 }
 
 class Planet {
-    pos: Position;
+    pos: Vector2D;
     game: Game;
     radius: number;
     img : CanvasImageSource;
@@ -12,10 +107,7 @@ class Planet {
     constructor(radius: number, game: Game){
         this.img = document.getElementById('planet') as CanvasImageSource;
         this.game = game;
-        this.pos = {
-            x: this.game.width * 0.5,
-            y: this.game.width * 0.5
-        }
+        this.pos = new Vector2D(this.game.width * 0.5, this.game.height * 0.5);
         this.radius = radius;          
     }
 
@@ -33,7 +125,7 @@ class Planet {
 }
 
 class Player{ 
-    pos: Position;
+    pos: Vector2D;
     game: Game; 
     radius : number;
     image : CanvasImageSource;
@@ -42,10 +134,7 @@ class Player{
 
     constructor(game: Game){
         this.game = game;
-        this.pos = {
-            x: this.game.canvas.width * 0.5,
-            y: this.game.canvas.height * 0.5
-        };
+        this.pos = new Vector2D(this.game.canvas.width * 0.5, this.game.canvas.height * 0.5);
         this.radius = 40;
         this.image = document.getElementById('player') as CanvasImageSource;
         this.angle = 0;
@@ -72,45 +161,372 @@ class Player{
         this.pos.y = this.game.planet.pos.y + (this.game.planet.radius + this.radius) * this.aim[1];
         this.angle = Math.atan2(this.aim[3], this.aim[2]);
     }
+
+    shoot(){
+        const projectile = this.game.getProjectile();        
+        if (projectile){
+            projectile.start(
+                this.pos.x + this.radius * this.aim[0], 
+                this.pos.y + this.radius * this.aim[1], 
+                this.aim[0], 
+                this.aim[1]);
+        }
+    }
 }
 
+class Enemy {
+    game: Game;
+    pos: Vector2D;
+    radius: number;
+    width: number;
+    height: number;
+    vel: Vector2D;
+    free: boolean;
+
+    constructor(game: Game){
+        this.game = game;
+        this.pos = new Vector2D(0, 0);
+        this.radius = 40;
+        this.width = this.radius * 2;
+        this.height = this.radius * 2;
+        this.vel = new Vector2D(0, 0);
+        this.free = true;
+    }
+
+    start(){
+        this.free = false;
+        let x: number, y : number;
+
+        if(Math.random() < 0.5) {
+            x = Math.random() * this.game.width;
+            y = Math.random() < 0.5 ? -this.radius : this.game.height + this.radius;
+        } else {
+            x = Math.random() < 0.5 ? -this.radius : this.game.width + this.radius;
+            y = Math.random() * this.game.height;
+        }
+
+        this.pos = new Vector2D(x, y)
+        let aim = this.game.calcAim(this.pos, this.game.planet.pos);
+        this.vel = new Vector2D(aim[0], aim[1]);
+    }
+
+    reset(){
+        // free = true (enemy is available)
+        this.free = true;
+    }
+
+    draw(ctx: CanvasRenderingContext2D){
+        if(!this.free){
+            if(this.game.debug){
+                ctx.beginPath();
+                ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+        }
+    }
+
+    update(){
+        
+    }
+}
+
+class Asteroid extends Enemy {
+    frameX: number;
+    frameY: number;
+    maxFrame: number;
+    image: CanvasImageSource;
+    lives: number;
+    collided: boolean;
+
+    constructor(game: Game){
+        super(game);
+        this.image = document.getElementById('asteroid') as CanvasImageSource;
+        this.frameX = 0;
+        this.frameY = Math.floor(Math.random() * 4);
+        this.lives = 5;
+        this.maxFrame = 7;
+        this.collided = false;
+    }
+    
+    hit(damage: number) {
+        this.lives -= damage;
+    }
+
+    update(){
+        if(!this.free){
+            this.pos = this.pos.add(this.vel);
+            // Check collisions with enemy / planet
+            if(this.game.checkCollision(this, this.game.planet) ||
+                this.game.checkCollision(this, this.game.player))
+            {
+                this.vel = this.vel.multiply(0); // stop enemy velocity
+                this.collided = true;            
+            }
+
+            // Check collisions with enemy / projectiles
+            this.game.projectilePool.all.forEach(projectile => {
+                if(!projectile.free){
+                    if(this.game.checkCollision(this, projectile) && this.lives > 0){
+                        projectile.reset();
+                        this.hit(1);
+                    }
+                }
+            });
+
+            // Sprite animation - if lives = 0 and 
+            if(this.lives < 1 && this.game.spriteAnimationTimer.ready) {
+                this.frameX++;
+            }
+            // one all explosion animation is done
+            // reset enemy back to enemy pool
+            // add score/
+            if(this.frameX > this.maxFrame) {
+                this.game.addScore(2);
+                this.reset();
+            }
+        }
+    }
+
+    start() {
+        this.lives = 5;
+        this.frameX = 0;
+        this.frameY = Math.floor(Math.random() * 4);
+        super.start();
+    }
+
+    draw(ctx: CanvasRenderingContext2D){
+        if(!this.free){
+            ctx.drawImage(
+                this.image, 
+                this.frameX * this.width, this.frameY * this.height, 
+                this.width, this.height,
+                this.pos.x - this.radius, this.pos.y - this.radius, 
+                this.width, this.height
+            )
+            if(this.game.debug){
+                ctx.save();
+                ctx.fillStyle = 'white';
+                ctx.font = '50px Helvetica';
+                ctx.textBaseline = 'middle';
+                ctx.textAlign = 'center';
+                ctx.fillText(this.lives.toString(), this.pos.x, this.pos.y);
+                ctx.restore();
+            }
+            super.draw(ctx);
+        }
+
+    }
+    
+}
+
+class Projectile {
+    game: Game;
+    pos: Vector2D;
+    vel: Vector2D;
+    velScalar: number;
+    radius: number;
+    free: boolean;
+    
+    constructor(game: Game) {
+        this.game = game;
+        this.pos = new Vector2D(0, 0);
+        this.vel = new Vector2D(0, 0);
+        this.radius = 5;
+        this.free = true;
+        this.velScalar = 5;
+    }
+
+    start(x: number, y: number, speedX: number, speedY: number){
+        this.free = false;
+        this.pos = new Vector2D(x, y);
+        this.vel = new Vector2D(speedX, speedY).scale(this.velScalar)      
+    }
+
+    reset(){
+        this.free = true;
+    }
+
+    draw(ctx: CanvasRenderingContext2D){     
+        if(!this.free) {
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2); 
+            ctx.fillStyle = 'gold';
+            ctx.fill();
+            ctx.restore();
+        }
+    }
+
+    update(){
+        if(!this.free) {
+            this.pos = this.pos.add(this.vel)
+        }
+        if(this.pos.x < 0 
+        || this.pos.x > this.game.width 
+        || this.pos.y < 0 
+        || this.pos.y > this.game.height
+        ) {
+            this.reset();
+        }
+    }
+    
+}
+
+
+class Timer {
+    counter: number;
+    interval: number;
+
+    constructor(targetInterval: number){
+        this.counter = 0;
+        this.interval = targetInterval;
+    }
+    
+    public get ready() : boolean {
+        return this.counter > this.interval;
+    }
+    
+    add(deltaTime: number) {
+        this.counter += deltaTime;
+    }    
+    
+    reset(){
+        this.counter = 0;
+    }
+}
+
+
+class Pool<T> {
+    private items: Array<Enemy | Projectile>;
+    game: Game;
+    maxItems: number;
+    
+    constructor(itemClass: typeof Enemy | typeof Projectile, maxItems: number, game: Game){
+        this.items = [];
+        this.game = game;
+        this.maxItems = maxItems;
+        for(let i = 0; i < maxItems; i++){
+            this.items.push(new itemClass(game));
+        }
+    }
+    
+    // @property
+    public get all(): Array<Enemy | Projectile> {
+        return this.items;
+    }
+
+    add(item: Enemy | Projectile): void{
+        this.items.push(item);
+    }
+
+    get(index: number): Enemy | Projectile{
+        if(index > this.items.length) throw new Error("Index out of range.");
+        return this.items[index]
+    }
+}
+
+
+
 class Game {
-    canvas : HTMLCanvasElement;
-    width : number;
-    height : number; 
-    planet : Planet;
+    canvas: HTMLCanvasElement;
+    width: number;
+    height: number; 
+    planet: Planet;
     player: Player;
-    mouse : Position;
-    debug : boolean;
+    mouse: Vector2D;
+    debug: boolean;
+
+    projectilePool: Pool<Projectile>;
+    numberOfProjectiles: number;
+    
+    enemyPool: Pool<Asteroid>;
+    numberOfEnemies: number;
+
+    enemyTimer: Timer
+    spriteAnimationTimer: Timer;
+
+    score: number;
 
     constructor(canvas: HTMLCanvasElement){
         this.canvas = canvas;
         this.width = this.canvas.width;
         this.height = this.canvas.height;
         this.planet = new Planet(80, this);
-        this.mouse = {
-            x: 0,
-            y: 0
-        }
+        this.mouse = new Vector2D(0, 0);
         this.player = new Player(this);
         this.debug = false;
+        this.score = 0;
+
+        this.projectilePool = new Pool(Projectile, 5, this);
+
+        this.enemyPool = new Pool(Asteroid, 5, this);
+        (this.enemyPool.get(0) as Asteroid).start();            // start first enemy        
+
+        this.enemyTimer = new Timer(1700);
+        this.spriteAnimationTimer = new Timer(90);
+
         window.addEventListener('mousemove', this.handleMouseMove.bind(this));
+        window.addEventListener('mousedown', this.handleMouseDown.bind(this));
         window.addEventListener('keyup', this.handleKeyup.bind(this));
     }
 
-    private handleKeyup(e: KeyboardEvent){
+    addScore(amt: number){
+        this.score += amt;
+        if(this.score % 50 == 0) {                // if game score is multiple of 100s
+            // this.enemyInterval *= 0.95            // reduce enemy interval rate by 5%
+            this.enemyPool.add(new Enemy(this))  // add 1 extra enemy to pool
+        }
+    }
+
+    getEnemy(): Enemy | Projectile {
+        for(let enemy of this.enemyPool.all){
+            if(enemy.free){
+                return enemy;
+            }
+        }
+    }
+
+    getProjectile(): Projectile | Enemy{
+        for(let projectile of this.projectilePool.all){
+            if(projectile.free){
+                return projectile;
+            }
+        }
+    }
+
+    handleKeyup(e: KeyboardEvent){
         if(e.key === "d") {
             this.debug = !this.debug;
         }
-        console.log(this.debug);
+        console.log(`[debug] is ${this.debug ? 'ON' : 'OFF'}`);
     }
 
-    private handleMouseMove(e: MouseEvent){
+    handleMouseMove(e: MouseEvent){
         this.mouse.x = e.offsetX;
         this.mouse.y = e.offsetY;
     }
 
-    calcAim(a: Position, b : Position): Array<number>{
+    handleMouseDown(e: MouseEvent) {
+        this.mouse.x = e.offsetX;
+        this.mouse.y = e.offsetY;
+        this.player.shoot();
+    }
+
+    drawStatusText(ctx: CanvasRenderingContext2D){
+        ctx.save();
+        ctx.textAlign = 'left';
+        ctx.font = '30px Impact';
+        ctx.fillStyle = 'white';
+        ctx.fillText(`Score: ${this.score}`, 20, 30);
+        ctx.restore();
+    }
+
+    checkCollision(a, b): boolean{
+        let dist = a.pos.distanceTo(b.pos);
+        return dist <= (a.radius + b.radius)
+    }
+
+    calcAim(a: Vector2D, b : Vector2D): Array<number>{
         const dx = a.x - b.x;
         const dy = a.y - b.y;
         const dist = Math.sqrt(dx**2 + dy**2);
@@ -119,10 +535,60 @@ class Game {
         return [aimX, aimY, dx, dy];
     }
 
-    render(ctx: CanvasRenderingContext2D){
+    render(ctx: CanvasRenderingContext2D, deltaTime: number){
+        // draw player
         this.player.draw(ctx);
-        this.planet.draw(ctx);
         this.player.update();   
+
+        // draw status text
+        this.drawStatusText(ctx);
+        
+        // draw planer
+        this.planet.draw(ctx);
+
+        // draw projectiles
+
+        this.projectilePool.all.forEach(projectile => {
+            projectile.draw(ctx);
+            projectile.update();
+        })
+
+        // draw enemies
+        for(let i = 0; i < this.enemyPool.all.length; i++) {
+            let enemy = this.enemyPool.get(i) as Enemy;
+            enemy.draw(ctx);
+            enemy.update()
+        }
+
+        // periodic activate an enemy
+        if(this.enemyTimer.ready){
+            const enemy = this.getEnemy() as Enemy;
+            if(enemy) enemy.start();
+            this.enemyTimer.reset();
+        } else {
+            this.enemyTimer.add(deltaTime)
+        }
+
+        // periodic activate explosion sprite
+        if(this.spriteAnimationTimer.ready){
+            this.spriteAnimationTimer.reset()
+        } else {
+            this.spriteAnimationTimer.add(deltaTime);
+        }
+        
+   
+
+        // Debug mode if pressed "d" key
+        if(this.debug) {
+            ctx.font = '20px Sans Serif';
+            ctx.textAlign = 'right';
+            ctx.strokeText(`[debug]`, this.canvas.width - 10, 20);
+            ctx.strokeText(`hit border ON`, this.canvas.width - 10, 40);
+            ctx.strokeText(`${(1000 / deltaTime).toFixed(0)} FPS`, this.canvas.width - 10, 60);
+            ctx.strokeText(`Enemies every ${this.enemyTimer.interval} ms`, this.canvas.width - 10, 80);
+            ctx.strokeText(`${this.enemyPool.all.length} enemies`, this.canvas.width - 10, 100);
+        }
+
     }
 
 }
@@ -136,12 +602,14 @@ window.addEventListener('load', () => {
     ctx.strokeStyle = 'white';
     ctx.lineWidth = 2;
     const game = new Game(canvas); 
-    game.render(ctx);
+    let lastTime = 0;
 
-    function animate(){
+    function animate(timeStamp){
+        const deltaTime = timeStamp - lastTime;
+        lastTime = timeStamp;
         ctx.clearRect(0, 0, game.canvas.width, game.canvas.height);
-        game.render(ctx);
-        requestAnimationFrame(animate);
+        game.render(ctx, deltaTime);
+        requestAnimationFrame(animate);        
     }
     requestAnimationFrame(animate);
 })
