@@ -1,6 +1,11 @@
 {
   "compilerOptions": {
     "allowJs": true,
+    "target": "ES6",
+    "module": "ESNext",
     "outDir": "./dist"
-  }  
+  },
+  "include": [
+    "./static/scripts/**/*.ts"
+  ]
 }
