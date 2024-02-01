@@ -98,61 +98,78 @@ class Vector2D {
     }
 }
 
-class Planet {
-    pos: Vector2D;
-    game: Game;
-    radius: number;
-    img : CanvasImageSource;
 
-    constructor(radius: number, game: Game){
-        this.img = document.getElementById('planet') as CanvasImageSource;
+class CircleEntity {
+    game: Game;
+    pos: Vector2D;
+    vel: Vector2D;
+    img: CanvasImageSource;
+    radius: number;
+
+    constructor(game: Game, img: CanvasImageSource, pos: Vector2D, radius: number, vel?: Vector2D){
         this.game = game;
-        this.pos = new Vector2D(this.game.width * 0.5, this.game.height * 0.5);
-        this.radius = radius;          
+        this.pos = pos;
+        this.vel = vel;
+        this.img = img;
+        this.radius = radius;
     }
 
     draw(ctx: CanvasRenderingContext2D){
-        ctx.drawImage(this.img, this.pos.x - 100, this.pos.y - 100);
+        let im = this.img as HTMLImageElement;
+        ctx.drawImage(this.img, this.pos.x - im.width / 2, this.pos.y - im.height / 2);
+
+        // Allow the following to be overriden in child classes
+        this.displayDebugInfo(ctx);
+    }
+
+    displayDebugInfo(ctx: CanvasRenderingContext2D){
         if(this.game.debug) {
             ctx.beginPath();
             ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
             ctx.stroke();
         }
     }
-
-    update(){
-    }
 }
 
-class Player{ 
-    pos: Vector2D;
-    game: Game; 
-    radius : number;
-    image : CanvasImageSource;
+
+class Planet extends CircleEntity{
+
+    constructor(radius: number, game: Game){
+        let img = document.getElementById('planet') as CanvasImageSource;
+        let pos = new Vector2D(game.width * 0.5, game.height * 0.5);
+        super(game, img, pos, radius)
+    }
+
+}
+
+
+class Player extends CircleEntity{ 
     aim: Array<number>;
     angle: number;
 
     constructor(game: Game){
-        this.game = game;
-        this.pos = new Vector2D(this.game.canvas.width * 0.5, this.game.canvas.height * 0.5);
-        this.radius = 40;
-        this.image = document.getElementById('player') as CanvasImageSource;
+        let img = document.getElementById('player') as CanvasImageSource;
+        let pos = new Vector2D(game.canvas.width * 0.5, game.canvas.height * 0.5);
+        let radius = 40;
+        super(game, img, pos, radius)
+
+        // Custom properties
         this.angle = 0;
+        this.aim = []
     }
 
     draw(ctx: CanvasRenderingContext2D) {
+        // Overriding draw() method.
+        // The spaceship needs to be oriented away from the planet as the 
+        // mouse moves. 
         ctx.save();
         ctx.translate(this.pos.x, this.pos.y);
         ctx.rotate(this.angle);
-        ctx.drawImage(this.image, -this.radius, -this.radius);
-        
-        if(this.game.debug) {
-            ctx.beginPath();
-            ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
-            ctx.stroke();
-        }
-
+        ctx.drawImage(this.img, -this.radius, -this.radius);
         ctx.restore();
+        
+        // Ensure debug is still shown.
+        this.displayDebugInfo(ctx);
     }
  
     update(){
@@ -169,12 +186,20 @@ class Player{
                 this.pos.x + this.radius * this.aim[0], 
                 this.pos.y + this.radius * this.aim[1], 
                 this.aim[0], 
-                this.aim[1]);
+                this.aim[1]
+            );
         }
     }
 }
 
-class Enemy {
+
+class Asteroid {
+    frameX: number;
+    frameY: number;
+    maxFrame: number;
+    image: CanvasImageSource;
+    lives: number;
+    collided: boolean;
     game: Game;
     pos: Vector2D;
     radius: number;
@@ -191,55 +216,6 @@ class Enemy {
         this.height = this.radius * 2;
         this.vel = new Vector2D(0, 0);
         this.free = true;
-    }
-
-    start(){
-        this.free = false;
-        let x: number, y : number;
-
-        if(Math.random() < 0.5) {
-            x = Math.random() * this.game.width;
-            y = Math.random() < 0.5 ? -this.radius : this.game.height + this.radius;
-        } else {
-            x = Math.random() < 0.5 ? -this.radius : this.game.width + this.radius;
-            y = Math.random() * this.game.height;
-        }
-
-        this.pos = new Vector2D(x, y)
-        let aim = this.game.calcAim(this.pos, this.game.planet.pos);
-        this.vel = new Vector2D(aim[0], aim[1]);
-    }
-
-    reset(){
-        // free = true (enemy is available)
-        this.free = true;
-    }
-
-    draw(ctx: CanvasRenderingContext2D){
-        if(!this.free){
-            if(this.game.debug){
-                ctx.beginPath();
-                ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
-                ctx.stroke();
-            }
-        }
-    }
-
-    update(){
-        
-    }
-}
-
-class Asteroid extends Enemy {
-    frameX: number;
-    frameY: number;
-    maxFrame: number;
-    image: CanvasImageSource;
-    lives: number;
-    collided: boolean;
-
-    constructor(game: Game){
-        super(game);
         this.image = document.getElementById('asteroid') as CanvasImageSource;
         this.frameX = 0;
         this.frameY = Math.floor(Math.random() * 4);
@@ -247,7 +223,10 @@ class Asteroid extends Enemy {
         this.maxFrame = 7;
         this.collided = false;
     }
-    
+    reset(){
+        this.free = true;
+    }
+
     hit(damage: number) {
         this.lives -= damage;
     }
@@ -291,7 +270,20 @@ class Asteroid extends Enemy {
         this.lives = 5;
         this.frameX = 0;
         this.frameY = Math.floor(Math.random() * 4);
-        super.start();
+        this.free = false;
+        let x: number, y : number;
+
+        if(Math.random() < 0.5) {
+            x = Math.random() * this.game.width;
+            y = Math.random() < 0.5 ? -this.radius : this.game.height + this.radius;
+        } else {
+            x = Math.random() < 0.5 ? -this.radius : this.game.width + this.radius;
+            y = Math.random() * this.game.height;
+        }
+
+        this.pos = new Vector2D(x, y)
+        let aim = this.game.calcAim(this.pos, this.game.planet.pos);
+        this.vel = new Vector2D(aim[0], aim[1]);
     }
 
     draw(ctx: CanvasRenderingContext2D){
@@ -311,27 +303,28 @@ class Asteroid extends Enemy {
                 ctx.textAlign = 'center';
                 ctx.fillText(this.lives.toString(), this.pos.x, this.pos.y);
                 ctx.restore();
+                ctx.beginPath();
+                ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
+                ctx.stroke();
             }
-            super.draw(ctx);
         }
 
     }
     
 }
 
-class Projectile {
-    game: Game;
-    pos: Vector2D;
-    vel: Vector2D;
+class Projectile extends CircleEntity{
     velScalar: number;
-    radius: number;
     free: boolean;
     
     constructor(game: Game) {
-        this.game = game;
-        this.pos = new Vector2D(0, 0);
-        this.vel = new Vector2D(0, 0);
-        this.radius = 5;
+        let img = null;
+        let pos = new Vector2D(0, 0)
+        let vel = new Vector2D(0, 0);
+        let radius = 5;
+        super(game, img, pos, radius, vel)
+
+        // Custom properties
         this.free = true;
         this.velScalar = 5;
     }
@@ -355,6 +348,7 @@ class Projectile {
             ctx.fill();
             ctx.restore();
         }
+        this.displayDebugInfo(ctx);
     }
 
     update(){
@@ -397,29 +391,33 @@ class Timer {
 
 
 class Pool<T> {
-    private items: Array<Enemy | Projectile>;
+    private items: Array<T>;
     game: Game;
     maxItems: number;
     
-    constructor(itemClass: typeof Enemy | typeof Projectile, maxItems: number, game: Game){
+    constructor(itemClass: typeof Asteroid | typeof Projectile, maxItems: number, game: Game){
         this.items = [];
         this.game = game;
         this.maxItems = maxItems;
         for(let i = 0; i < maxItems; i++){
-            this.items.push(new itemClass(game));
+            if(itemClass === Asteroid){
+                this.items.push(new Asteroid(game) as unknown as T)
+            } else if(itemClass === Projectile) {
+                this.items.push(new Projectile(game) as unknown as T)
+            }
         }
     }
     
     // @property
-    public get all(): Array<Enemy | Projectile> {
+    public get all(): Array<T> {
         return this.items;
     }
 
-    add(item: Enemy | Projectile): void{
+    add(item: T): void{
         this.items.push(item);
     }
 
-    get(index: number): Enemy | Projectile{
+    get(index: number): T{
         if(index > this.items.length) throw new Error("Index out of range.");
         return this.items[index]
     }
@@ -474,11 +472,11 @@ class Game {
         this.score += amt;
         if(this.score % 50 == 0) {                // if game score is multiple of 100s
             // this.enemyInterval *= 0.95            // reduce enemy interval rate by 5%
-            this.enemyPool.add(new Enemy(this))  // add 1 extra enemy to pool
+            this.enemyPool.add(new Asteroid(this))  // add 1 extra enemy to pool
         }
     }
 
-    getEnemy(): Enemy | Projectile {
+    getEnemy(): Asteroid | Projectile {
         for(let enemy of this.enemyPool.all){
             if(enemy.free){
                 return enemy;
@@ -486,7 +484,7 @@ class Game {
         }
     }
 
-    getProjectile(): Projectile | Enemy{
+    getProjectile(): Projectile | Asteroid{
         for(let projectile of this.projectilePool.all){
             if(projectile.free){
                 return projectile;
@@ -555,14 +553,14 @@ class Game {
 
         // draw enemies
         for(let i = 0; i < this.enemyPool.all.length; i++) {
-            let enemy = this.enemyPool.get(i) as Enemy;
+            let enemy = this.enemyPool.get(i) as Asteroid;
             enemy.draw(ctx);
             enemy.update()
         }
 
         // periodic activate an enemy
         if(this.enemyTimer.ready){
-            const enemy = this.getEnemy() as Enemy;
+            const enemy = this.getEnemy() as Asteroid;
             if(enemy) enemy.start();
             this.enemyTimer.reset();
         } else {
@@ -575,8 +573,6 @@ class Game {
         } else {
             this.spriteAnimationTimer.add(deltaTime);
         }
-        
-   
 
         // Debug mode if pressed "d" key
         if(this.debug) {
