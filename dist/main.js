@@ -86,7 +86,15 @@ class CircleEntity {
     }
     draw(ctx) {
         let im = this.img;
-        ctx.drawImage(this.img, this.pos.x - im.width / 2, this.pos.y - im.height / 2);
+        if (im) {
+            ctx.drawImage(this.img, this.pos.x - im.width / 2, this.pos.y - im.height / 2);
+        }
+        else {
+            ctx.beginPath();
+            ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+        }
         // Allow the following to be overriden in child classes
         this.displayDebugInfo(ctx);
     }
@@ -170,16 +178,21 @@ class Asteroid {
                 this.game.checkCollision(this, this.game.player)) {
                 this.vel = this.vel.multiply(0); // stop enemy velocity
                 this.collided = true;
+                this.reset();
+                // reduce live count after resetting enemy
+                // to ensure only 1 live is deducted
+                this.game.lives--;
             }
             // Check collisions with enemy / projectiles
-            this.game.projectilePool.all.forEach(projectile => {
+            for (let projectile of this.game.projectilePool) {
                 if (!projectile.free) {
                     if (this.game.checkCollision(this, projectile) && this.lives > 0) {
                         projectile.reset();
                         this.hit(1);
+                        this.vel = this.vel.multiply(0.9);
                     }
                 }
-            });
+            }
             // Sprite animation - if lives = 0 and 
             if (this.lives < 1 && this.game.spriteAnimationTimer.ready) {
                 this.frameX++;
@@ -247,6 +260,7 @@ class Projectile extends CircleEntity {
     }
     reset() {
         this.free = true;
+        this.pos = this.pos.multiply(-1); // set position to offcanvas
     }
     draw(ctx) {
         if (!this.free) {
@@ -256,18 +270,27 @@ class Projectile extends CircleEntity {
             ctx.fillStyle = 'gold';
             ctx.fill();
             ctx.restore();
+            this.displayDebugInfo(ctx);
         }
-        this.displayDebugInfo(ctx);
     }
     update() {
+        // Only update projectiles that have been shot (NOT in the pool);
         if (!this.free) {
+            // Update the projectile position acording to its velocity
             this.pos = this.pos.add(this.vel);
-        }
-        if (this.pos.x < 0
-            || this.pos.x > this.game.width
-            || this.pos.y < 0
-            || this.pos.y > this.game.height) {
-            this.reset();
+            // If the same is STOP, check if start button is triggered
+            // triggering the button is done by shooting at it
+            if (this.game.stop && this.game.checkCollision(this, this.game.btn)) {
+                // Reset projectile
+                this.reset();
+                // Reset game
+                this.game.reset();
+            }
+            // If projectile goes off canvas, reset it
+            if (this.pos.x < 0 || this.pos.x > this.game.width ||
+                this.pos.y < 0 || this.pos.y > this.game.height) {
+                this.reset();
+            }
         }
     }
 }
@@ -300,9 +323,13 @@ class Pool {
             }
         }
     }
-    // @property
-    get all() {
-        return this.items;
+    *[Symbol.iterator]() {
+        for (let item of this.items) {
+            yield item;
+        }
+    }
+    get length() {
+        return this.items.length;
     }
     add(item) {
         this.items.push(item);
@@ -311,6 +338,25 @@ class Pool {
         if (index > this.items.length)
             throw new Error("Index out of range.");
         return this.items[index];
+    }
+}
+class Button extends CircleEntity {
+    constructor(game, pos) {
+        let img = null;
+        let radius = 50;
+        super(game, img, pos, radius);
+    }
+    draw(ctx) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = '30px Impact';
+        ctx.fillStyle = 'white';
+        ctx.fillText('Start', this.pos.x, this.pos.y);
+        ctx.restore();
     }
 }
 class Game {
@@ -323,11 +369,16 @@ class Game {
         this.player = new Player(this);
         this.debug = false;
         this.score = 0;
+        this.lives = 10;
         this.projectilePool = new Pool(Projectile, 5, this);
         this.enemyPool = new Pool(Asteroid, 5, this);
         this.enemyPool.get(0).start(); // start first enemy        
         this.enemyTimer = new Timer(1700);
         this.spriteAnimationTimer = new Timer(90);
+        this.stop = false;
+        this.btn = new Button(this, new Vector2D(this.width / 2, this.height - 150));
+        this.shootAudio = document.getElementById('shootAudio');
+        this.explosionAudio = document.getElementById('explosionAudio');
         window.addEventListener('mousemove', this.handleMouseMove.bind(this));
         window.addEventListener('mousedown', this.handleMouseDown.bind(this));
         window.addEventListener('keyup', this.handleKeyup.bind(this));
@@ -340,14 +391,14 @@ class Game {
         }
     }
     getEnemy() {
-        for (let enemy of this.enemyPool.all) {
+        for (let enemy of this.enemyPool) {
             if (enemy.free) {
                 return enemy;
             }
         }
     }
     getProjectile() {
-        for (let projectile of this.projectilePool.all) {
+        for (let projectile of this.projectilePool) {
             if (projectile.free) {
                 return projectile;
             }
@@ -356,8 +407,19 @@ class Game {
     handleKeyup(e) {
         if (e.key === "d") {
             this.debug = !this.debug;
+            console.log(`[debug] is ${this.debug ? 'ON' : 'OFF'}`);
+            if (this.debug) {
+                console.log({
+                    'd': 'Toggle debug mode.',
+                    'g': 'Log <Game> class.'
+                });
+            }
         }
-        console.log(`[debug] is ${this.debug ? 'ON' : 'OFF'}`);
+        if (e.key === "g") {
+            if (this.debug) {
+                console.log(this);
+            }
+        }
     }
     handleMouseMove(e) {
         this.mouse.x = e.offsetX;
@@ -376,6 +438,20 @@ class Game {
         ctx.fillText(`Score: ${this.score}`, 20, 30);
         ctx.restore();
     }
+    drawLives(ctx) {
+        ctx.save();
+        ctx.fillStyle = 'white';
+        for (let i = 0; i < this.lives; i++) {
+            ctx.fillRect(20 + 15 * i, 50, 10, 30);
+        }
+        if (this.lives < 1) {
+            this.stop = true;
+            ctx.font = '60px Impact';
+            ctx.textAlign = 'center';
+            ctx.fillText('You Loose!', this.width * 0.5, this.height * 0.25);
+        }
+        ctx.restore();
+    }
     checkCollision(a, b) {
         let dist = a.pos.distanceTo(b.pos);
         return dist <= (a.radius + b.radius);
@@ -388,41 +464,75 @@ class Game {
         const aimY = dy / dist * -1;
         return [aimX, aimY, dx, dy];
     }
+    reset() {
+        this.lives = 10;
+        this.stop = false;
+        this.score = 0;
+        // Ensure that enemies positions are reset. 
+        // This avoids the case when restarting the game with enemies too close from 
+        // last game.
+        for (let enemy of this.enemyPool) {
+            enemy.reset();
+        }
+    }
     render(ctx, deltaTime) {
         // draw player
         this.player.draw(ctx);
         this.player.update();
         // draw status text
         this.drawStatusText(ctx);
-        // draw planer
+        // draw lives
+        this.drawLives(ctx);
+        // draw planet
         this.planet.draw(ctx);
         // draw projectiles
-        this.projectilePool.all.forEach(projectile => {
+        for (let i = 0; i < this.projectilePool.length; i++) {
+            let projectile = this.projectilePool.get(i);
             projectile.draw(ctx);
             projectile.update();
-        });
-        // draw enemies
-        for (let i = 0; i < this.enemyPool.all.length; i++) {
-            let enemy = this.enemyPool.get(i);
-            enemy.draw(ctx);
-            enemy.update();
         }
-        // periodic activate an enemy
-        if (this.enemyTimer.ready) {
-            const enemy = this.getEnemy();
-            if (enemy)
-                enemy.start();
-            this.enemyTimer.reset();
+        // draw projectile pool
+        ctx.save();
+        ctx.font = '15px Impact';
+        ctx.fillStyle = 'white';
+        // let s = 'Projectiles:'
+        // ctx.fillText(s, this.width - 200, this.height - 100);
+        let freeProjectiles = this.projectilePool.items.filter(p => p.free).length;
+        for (let i = 0; i < freeProjectiles; i++) {
+            ctx.beginPath();
+            ctx.arc((this.width - 24 * this.projectilePool.maxItems) + (24 * i), 20, 8, 0, Math.PI * 2);
+            ctx.fillStyle = 'gold';
+            ctx.fill();
+        }
+        ctx.restore();
+        // Only draw enemies if the game is not over
+        if (!this.stop) {
+            // draw enemies
+            for (let i = 0; i < this.enemyPool.length; i++) {
+                let enemy = this.enemyPool.get(i);
+                enemy.draw(ctx);
+                enemy.update();
+            }
+            // periodic activate an enemy
+            if (this.enemyTimer.ready) {
+                const enemy = this.getEnemy();
+                if (enemy)
+                    enemy.start();
+                this.enemyTimer.reset();
+            }
+            else {
+                this.enemyTimer.add(deltaTime);
+            }
+            // periodic activate explosion sprite
+            if (this.spriteAnimationTimer.ready) {
+                this.spriteAnimationTimer.reset();
+            }
+            else {
+                this.spriteAnimationTimer.add(deltaTime);
+            }
         }
         else {
-            this.enemyTimer.add(deltaTime);
-        }
-        // periodic activate explosion sprite
-        if (this.spriteAnimationTimer.ready) {
-            this.spriteAnimationTimer.reset();
-        }
-        else {
-            this.spriteAnimationTimer.add(deltaTime);
+            this.btn.draw(ctx);
         }
         // Debug mode if pressed "d" key
         if (this.debug) {
@@ -432,25 +542,35 @@ class Game {
             ctx.strokeText(`hit border ON`, this.canvas.width - 10, 40);
             ctx.strokeText(`${(1000 / deltaTime).toFixed(0)} FPS`, this.canvas.width - 10, 60);
             ctx.strokeText(`Enemies every ${this.enemyTimer.interval} ms`, this.canvas.width - 10, 80);
-            ctx.strokeText(`${this.enemyPool.all.length} enemies`, this.canvas.width - 10, 100);
+            ctx.strokeText(`${this.enemyPool.length} enemies`, this.canvas.width - 10, 100);
         }
     }
 }
+// Once all HTML and images are loaded
 window.addEventListener('load', () => {
+    // Get canvas and set dimensions
     const canvas = document.getElementById('canvas1');
-    canvas.width = 800;
+    canvas.width = window.innerWidth;
     canvas.height = 800;
+    // Get canvas context and set some global defaults
     const ctx = canvas.getContext("2d");
     ctx.strokeStyle = 'white';
     ctx.lineWidth = 2;
+    // Instanciate a Game instance
     const game = new Game(canvas);
     let lastTime = 0;
     function animate(timeStamp) {
+        // [Helper] calculate time it takes to animate 1 frame.
+        // Used to calculate FPS metric, for example.
         const deltaTime = timeStamp - lastTime;
         lastTime = timeStamp;
+        // Reset canvas
         ctx.clearRect(0, 0, game.canvas.width, game.canvas.height);
+        // Render new frame
         game.render(ctx, deltaTime);
+        // Loop
         requestAnimationFrame(animate);
     }
+    // Loop
     requestAnimationFrame(animate);
 });

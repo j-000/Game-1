@@ -1,8 +1,12 @@
 canvas {
-    border: 1px solid black;
     background-image: url('../../assets/background.png');
 }
 
 .hidden {
     display: none;
+}
+
+body {
+    margin: 0;
+    /* overflow: hidden; */
 }
