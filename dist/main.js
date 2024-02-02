@@ -87,7 +87,11 @@ class CircleEntity {
     draw(ctx) {
         let im = this.img;
         if (im) {
-            ctx.drawImage(this.img, this.pos.x - im.width / 2, this.pos.y - im.height / 2);
+            ctx.save();
+            let x = this.pos.x - (im.width / 2);
+            let y = this.pos.y - (im.height / 2);
+            ctx.drawImage(this.img, x, y);
+            ctx.restore();
         }
         else {
             ctx.beginPath();
@@ -231,7 +235,7 @@ class Asteroid {
             if (this.game.debug) {
                 ctx.save();
                 ctx.fillStyle = 'white';
-                ctx.font = '50px Helvetica';
+                ctx.font = '30px Helvetica';
                 ctx.textBaseline = 'middle';
                 ctx.textAlign = 'center';
                 ctx.fillText(this.lives.toString(), this.pos.x, this.pos.y);
@@ -434,7 +438,7 @@ class Game {
     drawStatusText(ctx) {
         ctx.save();
         ctx.textAlign = 'left';
-        ctx.font = '30px Impact';
+        ctx.font = '20px Impact';
         ctx.fillStyle = 'white';
         ctx.fillText(`Score: ${this.score}`, 20, 30);
         ctx.restore();
@@ -443,7 +447,7 @@ class Game {
         ctx.save();
         ctx.fillStyle = 'white';
         for (let i = 0; i < this.lives; i++) {
-            ctx.fillRect(20 + 15 * i, 50, 10, 30);
+            ctx.fillRect(20 + 15 * i, 40, 10, 20);
         }
         if (this.lives < 1) {
             this.stop = true;
@@ -551,8 +555,8 @@ class Game {
 window.addEventListener('load', () => {
     // Get canvas and set dimensions
     const canvas = document.getElementById('canvas1');
-    canvas.width = window.innerWidth;
-    canvas.height = 800;
+    canvas.width = 800;
+    canvas.height = window.innerHeight;
     // Get canvas context and set some global defaults
     const ctx = canvas.getContext("2d");
     ctx.strokeStyle = 'white';
