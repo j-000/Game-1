@@ -274,7 +274,8 @@ class Asteroid {
             // reset enemy back to enemy pool
             // add score/
             if(this.frameX > this.maxFrame) {
-                this.game.addScore(2);
+                let scoreValue = Number((this.pos.distanceTo(this.game.player.pos) * 0.10).toFixed(0));
+                this.game.addScore(scoreValue);
                 this.reset();
             }
         }
@@ -513,7 +514,7 @@ class Game {
         this.debug = false;
         this.score = 0;
         this.lives = 10;
-        this.projectilePool = new Pool(Projectile, 5, this);
+        this.projectilePool = new Pool(Projectile, 10, this);
 
         this.enemyPool = new Pool(Asteroid, 5, this);
         (this.enemyPool.get(0) as Asteroid).start();            // start first enemy        
@@ -528,14 +529,14 @@ class Game {
         window.addEventListener('mousemove', this.handleMouseMove.bind(this));
         window.addEventListener('mousedown', this.handleMouseDown.bind(this));
         window.addEventListener('keyup', this.handleKeyup.bind(this));
+        window.addEventListener('resize', e => {
+            this.canvas.width = window.innerWidth;
+            this.canvas.height = 800;
+        })
     }
 
     addScore(amt: number){
         this.score += amt;
-        if(this.score % 50 == 0) {                // if game score is multiple of 100s
-            // this.enemyInterval *= 0.95            // reduce enemy interval rate by 5%
-            this.enemyPool.add(new Asteroid(this))  // add 1 extra enemy to pool
-        }
     }
 
     getEnemy(): Asteroid {
